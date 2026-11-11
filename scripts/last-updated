@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -eu
+last_update=$(awk '/\[PACMAN\] starting full system upgrade/ { date=substr($0,2,10) } END { print date }' /var/log/pacman.log 2>/dev/null || true)
+if [[ -z "$last_update" ]] || ! last_epoch=$(date -d "$last_update" +%s 2>/dev/null); then
+    printf '%s\n' '{"text":"?","class":"","tooltip":"No full system upgrade found in pacman.log"}'
+    exit 0
+fi
+days=$(( ($(date +%s) - last_epoch) / 86400 ))
+(( days < 0 )) && days=0
+status=''
+(( days > 7 )) && status=critical
+printf '{"text":"%s","class":"%s","tooltip":"Last full update: %s"}\n' "$days" "$status" "$last_update"

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Use the original wpaperd + wpaperctl when available, otherwise Sway/swaybg.
+set -Eeuo pipefail
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+wallpaper_dir="${SWAY_RICE_WALLPAPERS:-$HOME/Pictures/Wallpapers}"
+state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/sway-rice"
+action="${1:-start}"
+case "$action" in start|next|previous) ;; *) printf 'Usage: wallpaper [start|next|previous]\n' >&2; exit 2 ;; esac
+[[ -d "$wallpaper_dir" ]] || exit 0
+mapfile -d '' images < <(find "$wallpaper_dir" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) -print0 | sort -z)
+((${#images[@]})) || exit 0
+find_tool() {
+    local name="$1" candidate
+    for candidate in "$script_dir/tools/$name" "$HOME/.local/bin/$name"; do
+        if [[ -x "$candidate" ]]; then printf '%s\n' "$candidate"; return; fi
+    done
+    command -v "$name"
+}
+if [[ -z "${SWAY_RICE_WALLPAPERS:-}" ]] && daemon=$(find_tool wpaperd) && controller=$(find_tool wpaperctl); then
+    if [[ "$action" == start ]]; then
+        pgrep -x wpaperd >/dev/null || "$daemon" -d
+    else
+        "$controller" "$action"
+    fi
+    exit 0
+fi
+mkdir -p -- "$state_dir"
+current=''
+[[ ! -f "$state_dir/wallpaper" ]] || IFS= read -r current < "$state_dir/wallpaper" || true
+index=0
+for i in "${!images[@]}"; do
+    if [[ "${images[$i]}" == "$current" ]]; then index="$i"; break; fi
+done
+case "$action" in
+    next) index=$(( (index + 1) % ${#images[@]} )) ;;
+    previous) index=$(( (index + ${#images[@]} - 1) % ${#images[@]} )) ;;
+esac
+# JSON encoding keeps quotes, backslashes, and semicolons in filenames out of IPC syntax.
+quoted=$(jq -Rn --arg path "${images[$index]}" '$path')
+swaymsg "output * bg $quoted fill" >/dev/null
+printf '%s\n' "${images[$index]}" > "$state_dir/wallpaper"

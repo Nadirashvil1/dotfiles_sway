@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+
+OUTPUT_DIR="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+
+# Prevent multiple slurp instances
+pkill -0 slurp 2>/dev/null && exit 0
+
+# Detect compositor
+if pgrep -x niri >/dev/null; then
+    COMP=niri
+elif pgrep -x sway >/dev/null; then
+    COMP=sway
+elif pgrep -x Hyprland >/dev/null || pgrep -x hyprland >/dev/null; then
+    COMP=hyprland
+elif [[ "$XDG_CURRENT_DESKTOP" =~ [Ss]way ]]; then
+    COMP=sway
+elif [[ "$XDG_CURRENT_DESKTOP" =~ [Hh]yprland ]]; then
+    COMP=hyprland
+elif [[ "$XDG_CURRENT_DESKTOP" =~ [Nn]iri ]]; then
+    COMP=niri
+else
+    COMP=generic
+fi
+
+get_output() {
+    case "$COMP" in
+    niri)
+        niri msg -j outputs 2>/dev/null | jq -r '.[] | select(.is_focused == true) | "\(.logical.x),\(.logical.y) \(.logical.width)x\(.logical.height)"' 2>/dev/null
+        ;;
+    sway)
+        swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | select(.focused == true) | "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)"' 2>/dev/null
+        ;;
+    hyprland)
+        hyprctl -j monitors 2>/dev/null | jq -r '.[] | select(.focused == true) | "\(.x),\(.y) \(.width)x\(.height)"' 2>/dev/null
+        ;;
+    esac
+}
+
+get_candidates() {
+    case "$COMP" in
+    niri)
+        niri msg -j outputs 2>/dev/null | jq -r '.[] | "\(.logical.x),\(.logical.y) \(.logical.width)x\(.logical.height)"'
+        niri msg -j windows 2>/dev/null | jq -r '.[] | select(.logical != null) | "\(.logical.x),\(.logical.y) \(.logical.width)x\(.logical.height)"'
+        ;;
+    sway)
+        swaymsg -t get_outputs 2>/dev/null | jq -r '.[] | "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)"'
+        swaymsg -t get_tree 2>/dev/null | jq -r '.. | select(.pid? and .visible?) | .rect | "\(.x),\(.y) \(.width)x\(.height)"'
+        ;;
+    hyprland)
+        hyprctl -j monitors 2>/dev/null | jq -r '.[] | "\(.x),\(.y) \(.width)x\(.height)"'
+        hyprctl -j clients 2>/dev/null | jq -r '.[] | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"'
+        ;;
+    esac
+}
+
+MODE="selection"
+SAVE=false
+EDIT=false
+
+for arg in "$@"; do
+    case "$arg" in
+    fullscreen|full|screen)
+        MODE="fullscreen"
+        ;;
+    window)
+        MODE="window"
+        ;;
+    selection|area|smart)
+        MODE="selection"
+        ;;
+    save|--save|-s)
+        SAVE=true
+        ;;
+    edit|--edit|-e)
+        EDIT=true
+        ;;
+    esac
+done
+
+GEOM=""
+
+if [[ "$MODE" == fullscreen ]]; then
+    GEOM="$(get_output)"
+elif [[ "$MODE" == window && "$COMP" == sway ]]; then
+    GEOM="$(swaymsg -t get_tree 2>/dev/null | jq -r '.. | select(.type? and .focused == true) | "\(.rect.x),\(.rect.y) \(.rect.width)x\(.rect.height)"' 2>/dev/null)"
+    [[ -z "$GEOM" ]] && GEOM="$(get_candidates | slurp)"
+elif [[ "$MODE" == window && "$COMP" == hyprland ]]; then
+    GEOM="$(hyprctl -j activewindow 2>/dev/null | jq -r '"\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' 2>/dev/null)"
+    [[ -z "$GEOM" ]] && GEOM="$(get_candidates | slurp)"
+else
+    # Selection / smart mode
+    candidates="$(get_candidates 2>/dev/null)"
+    if [[ -n "$candidates" ]]; then
+        GEOM="$(echo "$candidates" | slurp)"
+    else
+        GEOM="$(slurp)"
+    fi
+fi
+
+# If interactive selection was cancelled
+if [[ "$MODE" != fullscreen && -z "$GEOM" ]]; then
+    exit 0
+fi
+
+# Build grim arguments
+GRIM_ARGS=()
+if [[ -n "$GEOM" ]]; then
+    GRIM_ARGS+=(-g "$GEOM")
+fi
+
+if [[ "$EDIT" == true ]]; then
+    if command -v satty >/dev/null 2>&1; then
+        mkdir -p "$OUTPUT_DIR"
+        grim "${GRIM_ARGS[@]}" - | satty \
+            --filename - \
+            --output-filename "$OUTPUT_DIR/screenshot-$(date +'%Y-%m-%d_%H-%M-%S').png" \
+            --early-exit \
+            --actions-on-enter save-to-clipboard \
+            --copy-command 'wl-copy --type image/png'
+        exit 0
+    elif command -v swappy >/dev/null 2>&1; then
+        grim "${GRIM_ARGS[@]}" - | swappy -f -
+        exit 0
+    fi
+fi
+
+if [[ "$SAVE" == true ]]; then
+    mkdir -p "$OUTPUT_DIR"
+    FILE="$OUTPUT_DIR/screenshot-$(date +'%Y-%m-%d_%H-%M-%S').png"
+    grim "${GRIM_ARGS[@]}" "$FILE"
+    wl-copy --type image/png < "$FILE"
+    notify-send -i "$FILE" "Screenshot captured" "Saved to $(basename "$FILE") & copied to clipboard"
+else
+    grim "${GRIM_ARGS[@]}" - | wl-copy --type image/png
+    notify-send -i image-x-generic "Screenshot captured" "Copied to clipboard"
+fi

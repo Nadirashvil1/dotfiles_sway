@@ -1,0 +1,4 @@
+[default]
+path = "~/Pictures/Wallpapers"
+sorting = "random"
+# duration = "30m"

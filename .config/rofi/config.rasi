@@ -1,0 +1,75 @@
+@theme "/dev/null"
+
+configuration {
+    modes: "drun,run";
+    show-icons: true;
+    display-drun: "";
+    font: "JetBrainsMono Nerd Font 11";
+}
+
+* {
+    bg:           #2b2f37;
+    fg:           #c5cad3;
+    bg-alt:       #323742;
+    border-color: #3e4452;
+    selected-bg:  #3e4452;
+    selected-fg:  #d8dee9;
+
+    background-color: transparent;
+    text-color: @fg;
+}
+
+window {
+    width: 500px;
+    background-color: @bg;
+    border: 1px solid;
+    border-color: @border-color;
+    border-radius: 0px;
+    padding: 12px;
+}
+
+mainbox {
+    children: [ inputbar, listview ];
+    spacing: 8px;
+}
+
+inputbar {
+    background-color: @bg-alt;
+    border: 1px solid;
+    border-color: #3e4452;
+    border-radius: 0px;
+    padding: 8px 12px;
+    children: [ entry ];
+    spacing: 8px;
+}
+
+entry {
+    placeholder: "run";
+    placeholder-color: #5c6370;
+}
+
+listview {
+    lines: 8;
+    columns: 1;
+    spacing: 2px;
+}
+
+element {
+    padding: 6px 10px;
+    border-radius: 0px;
+}
+
+element selected {
+    background-color: @selected-bg;
+    text-color: @selected-fg;
+}
+
+element-text {
+    text-color: inherit;
+    vertical-align: 0.5;
+}
+
+element-icon {
+    size: 20px;
+    margin: 0 8px 0 0;
+}
